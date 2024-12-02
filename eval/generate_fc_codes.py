@@ -61,10 +61,25 @@ class APPSEvaluator:
         self.semaphore = threading.Semaphore(config.get("execution", "num_concurrent", default=1))
         self.lock = threading.Lock()
         self.responses = {}
-        self.save_dir = config.get("execution", "save_dir", default="./results")
+        base_save_dir = config.get("execution", "save_dir", default="./results")
+        self.save_dir = self._get_save_dir(base_save_dir)
         self.verbose = config.get("execution", "verbose", default=False)
         self.save_frequency = config.get("execution", "save_frequency", default=10)
         os.makedirs(self.save_dir, exist_ok=True)
+
+    def _get_save_dir(self, base_dir: str) -> str:
+        if not os.path.exists(base_dir):
+            return base_dir
+            
+        while True:
+            response = input(f"Directory '{base_dir}' already exists. Enter a postfix to append (or press Enter to override): ").strip()
+            if not response:
+                return base_dir
+            
+            new_dir = f"{base_dir}_{response}"
+            if not os.path.exists(new_dir):
+                return new_dir
+            print(f"Directory '{new_dir}' also exists. Please try a different postfix.")
 
     def process_problem(self, index, problem):
         with self.semaphore:
