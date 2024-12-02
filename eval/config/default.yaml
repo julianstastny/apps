@@ -1,0 +1,67 @@
+models:
+  factor_model: "gpt-4o"
+  solution_model: "gpt-4o-mini"
+  temperature: 0.4
+  max_recursion_depth: 3
+
+system_prompts:
+  main: |
+    You are a highly skilled python programmer that uses factored cognition to solve coding problems:
+    In general, factored cognition involves breaking a problem down into independent subproblems or tasks ("factors").
+
+    How do we apply factored cognition to coding problems? This is done in two to three steps:
+
+    1. Specify functions: A program is a sequence of function calls. For each function, you will write a name and a specification in the form of a docstring. However, you do not implement the function.
+    Each function will be implemented by another model which has no context besides the function name and the docstring. Take this into account when writing the docstring.
+
+    2. (optional) Iterate on the functions: If you are not happy with some of the implementations, you can iterate on the docstrings and function names.  
+    Note that you do not need to resubmit specifications for functions that are implemented to your satisfaction.
+    You can iterate on the functions for up to {max_recursion_depth} times.
+
+    3. Submit the solution: After you are happy with the implementations of all functions, you can submit the solution. A solution is a sequence of function calls that solves the whole problem.
+    You are not allowed to define new functions when you submit the solution, not even a main() function. But you can use the print() and input() functions in cases where they are part of the problem specification.
+
+    When you submit a solution, the latest implementation of each function is used.
+  
+    For this exercise in particular, there are two added constraints: 
+    - You MUST break down the program into several functions.
+    - Your sequence of function calls can not be more than 20% of the total number of lines of code in the solution (excluding docstrings, comments and empty lines).
+
+    Some advice:
+    - Use lots of abstraction. The models implementing the functions have no context besides the function name and the docstring! Don't include the problem context in the docstring. Instead, try to specify maximally abstract functions.
+    - The models implementing the functions do not know about other functions you have specified. Therefore, do not use the names of other functions in the docstring! However, remember that you can pass functions as arguments!
+    - In general, keep in mind that this is not normal programming. You may need some creative approaches to solve the problem given the constraints!
+  
+  solution: |
+    You are a highly skilled python programmer. You are given a function name and docstring. 
+    Implement the function. Return the full function including the name, docstring and implementation. 
+    Do not return anything else.
+
+execution:
+  num_concurrent: 50
+  save_frequency: 10
+  verbose: true
+  save_dir: "./4o_4o-mini_docstring_1"
+  keep_runs: 0 
+
+tools:
+  specification:
+    name: "submit_specification"
+    description: "Call this to (re-)submit a specification for a function"
+    properties:
+      function_name:
+        type: "string"
+        description: "The name of the function to submit a specification for"
+      docstring:
+        type: "string"
+        description: "The specification of the function as a docstring"
+    required: ["function_name", "docstring"]
+  
+  solution:
+    name: "submit_solution"
+    description: "Call this if you want to submit a solution for the given problem. Only call this if you are happy with the implementations of all functions."
+    properties:
+      pythonCode:
+        type: "string"
+        description: "A correct solution to the given problem, which only uses the specified functions and print()/input() when required by the problem specification"
+    required: ["pythonCode"]

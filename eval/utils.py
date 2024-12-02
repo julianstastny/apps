@@ -54,6 +54,8 @@ class Client:
         return_full_response: bool = False, 
         **kwargs
     ) -> Any:
+        if "tools" in kwargs:
+            return_full_response = True
         try:
             if self.provider == "anthropic":
                 if isinstance(response_format, type) and issubclass(response_format, BaseModel):

@@ -25,37 +25,64 @@ EXAMPLE_RESULTS = {"0": [[-2]],"1": [[False,False,False]],"2": [[True,True]],"3"
 EXAMPLE_ARGS = SimpleNamespace(debug=True)
 TIMEOUT = 10
 
-def print_results(results: Dict, args:argparse.Namespace=None):
+def get_report_path(save_dir: str, problem_index: int) -> str:
     """
-    Given the results evaluated against the testcases we output some statistics.
+    Constructs the path to the markdown report file.
+    """
+    reports_dir = os.path.join(save_dir, "reports")
+    return os.path.join(reports_dir, f"tree_{problem_index}.md")
 
-    >>> print_results(EXAMPLE_RESULTS, EXAMPLE_ARGS)
-    number of compile errors = 1 avg = 0.2
-    number of runtime errors = 1 avg = 0.2
-    number of test cases run = 5
-    Test Case Average (average accuracy over problems) = 0.3
-    Strict Accuracy (all test cases passed / total problems) = 0.2
+def print_aggregate_stats(results: Dict):
     """
-    res = []
-    per_prob_res = []
-    all_correct = []
+    Print aggregate statistics to console only.
+    """
+    all_results = []
     for index in results:
         problem_results = np.asarray(results[index])
-        res.extend(problem_results)
-        per_prob_res.append(np.mean(problem_results > 0))
-        all_correct.append(np.all(problem_results > 0))
+        if len(problem_results.shape) > 1:
+            problem_results = problem_results[0]
+        all_results.extend(problem_results)
+    
+    all_results = np.array(all_results)
+    total_problems = len(results)
+    
+    # Aggregate statistics
+    passed_problems = sum(np.all(np.asarray(results[idx]) > 0) for idx in results)
+    test_case_avg = np.mean([np.mean(np.asarray(results[idx]) > 0) for idx in results])
+    strict_accuracy = passed_problems / total_problems
+    
+    print(f"\nAggregate Statistics:")
+    print(f"Test Case Average (average accuracy over problems) = {test_case_avg:.2f}")
+    print(f"Strict Accuracy (all test cases passed / total problems) = {strict_accuracy:.2f}")
 
-    # We count both compile errors and runtime errors for multiple tests as one error.
-    compile_errors = len([e for e in res if -2 in e])
-    runtime_errors = len([e for e in res if -1 in e])
-    total_testcases = len(res)
-    if args and args.debug:
-        print(f"number of compile errors = {compile_errors} avg = {compile_errors / total_testcases }")
-        print(f"number of runtime errors = {runtime_errors} avg = {runtime_errors / total_testcases}")
-        print(f"number of test cases run = {total_testcases}")
+def write_problem_results(results: Dict, args: argparse.Namespace):
+    """
+    Write individual problem results to markdown files.
+    """
+    for index in results:
+        problem_results = np.asarray(results[index])
+        if len(problem_results.shape) > 1:
+            problem_results = problem_results[0]
+        
+        total = len(problem_results)
+        compile_errors = np.sum(problem_results == -2)
+        runtime_errors = np.sum(problem_results == -1)
+        failed_tests = np.sum(problem_results == 0)
+        passed_tests = np.sum(problem_results > 0)
+        
+        results_summary = [
+            "Test case breakdown:",
+            f"- ✅ Passed: {passed_tests}/{total} ({passed_tests/total:.1%})",
+            f"- ❌ Failed: {failed_tests}/{total} ({failed_tests/total:.1%})",
+            f"- ❌ (RE) Runtime Errors: {runtime_errors}/{total} ({runtime_errors/total:.1%})",
+            f"- ❌ (CE) Compile Errors: {compile_errors}/{total} ({compile_errors/total:.1%})"
+        ]
 
-    print(f"Test Case Average (average accuracy over problems) = {np.mean(per_prob_res)}")
-    print(f"Strict Accuracy (all test cases passed / total problems) = {np.mean(all_correct)}")
+        report_path = get_report_path(args.save, index)
+        if os.path.exists(report_path):
+            with open(report_path, 'a') as f:
+                f.write("\n\n## Test Results\n")
+                f.write("\n".join(results_summary))
 
 # Dummy `test_util.run_test` function for debugging multiprocessing.
 def run_test(problem, test, debug):
@@ -109,10 +136,10 @@ def eval_and_save_problems(args):
     if not os.path.exists(codes_loc):
         codes_loc = os.path.join(args.save, f"{args.start}-{args.end}_codes.json")
 
-    if os.path.exists(codes_loc):
-        results_loc = os.path.join(args.save, f"all_results.json") 
+    if args.start == 0 and args.end is None:
+        results_loc = os.path.join(args.save, f"all_results.json")
     else:
-        results_loc = os.path.join(args.save, f"{args.start}-{args.end}_results.json") 
+        results_loc = os.path.join(args.save, f"{args.start}-{args.end}_results.json")
     # print(codes_loc, results_loc)
 
     with open(codes_loc, "r") as f: 
@@ -190,10 +217,12 @@ def eval_and_save_problems(args):
                 res.append(curr_res)
 
         if args.debug:
-            print(f"\nHow to read results [-2] = compile error, [-1] = runtime error, [False] = failed test case, [True] = passed test case")
-            #print(f"results = {res}")
- 
+            print_aggregate_stats({index+args.start+args.index: res})
+
         results[index+args.start+args.index] = res
+        
+        # Always add test results to the markdown report
+        write_problem_results({index+args.start+args.index: res}, args)
         
         with open(results_loc, "w") as f:
             try:
@@ -212,24 +241,26 @@ def main(args):
 
     if args.print_results:
         results = {}
-        results_loc = os.path.join(args.save, f"all_results.json")
-        if os.path.exists(results_loc):
-            results_loc = os.path.join(args.save, f"all_results.json") 
-        elif os.path.exists(f"{args.start}-{args.end}_results.json"):
-            results_loc = os.path.join(args.save, f"{args.start}-{args.end}_results.json")
+        if args.start == 0 and args.end is None:
+            results_loc = os.path.join(args.save, f"all_results.json")
         else:
-            print("No results to print exiting.")
+            results_loc = os.path.join(args.save, f"{args.start}-{args.end}_results.json")
+        
+        if not os.path.exists(results_loc):
+            print(f"No results file found at {results_loc}, exiting.")
             exit()
 
         with open(results_loc, "r") as f: 
             results = json.load(f)
-        print_results(results, args)
+        print_aggregate_stats(results)
+        write_problem_results(results, args)
         exit()
 
     if not args.skip_evals:
         results = eval_and_save_problems(args)
 
-    print_results(results, args)
+    print_aggregate_stats(results)
+    write_problem_results(results, args)
 
 
 if __name__ == "__main__":
